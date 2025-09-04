@@ -93,3 +93,6 @@ pip install -r app/requirements.txt
 Run the app:
 
 uvicorn app.main:app --host 0.0.0.0 --port 8000
+
+
+The link to grab what shows are live is http://localhost:8000/live-status/live, this is only accesible while the application is running
