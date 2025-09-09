@@ -9,10 +9,10 @@ ENV PYTHONUNBUFFERED=1
 RUN apt-get update && apt-get install -y ffmpeg
 
 # Create app directory
-WORKDIR /app
+WORKDIR /
 
 # Copy project files
-COPY ./app /app
+COPY ./ /
 
 # Install Python dependencies
 RUN pip install --upgrade pip

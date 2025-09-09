@@ -32,9 +32,11 @@ def check_channel_live(channel_id):
 
     ydl_opts = {"quiet": True, "skip_download": True, "logger": NoLogging(),}
 
-    with YoutubeDL(ydl_opts) as ydl:
+    
         
-        try:
+    try:
+
+        with YoutubeDL(ydl_opts) as ydl:
             #grabs video info using yt_dlp
             info = ydl.extract_info(live_url, download=False)
 
@@ -47,8 +49,9 @@ def check_channel_live(channel_id):
                 "watch_url": f"https://www.youtube.com/watch?v={info.get('id')}" if info.get("is_live", False) else None
             }
         #if it's not live, or there's an error it return None
-        except (DownloadError , Exception): 
-            return None
+    except (DownloadError, Exception) as e:
+        print(f"⚠️ Error checking {channel_id}: {e}")
+        return None
 
 #dictionary for storing the latest livestatus of the channels
 live_status_cache = {}
@@ -59,8 +62,15 @@ async def background_live_checker():
     global live_status_cache
     while True:
         print("🔁 Checking all channels...")
+        tasks = []
         for channel_id, channel_name in CHANNEL_IDS.items():
-            status = check_channel_live(channel_id)
+            task = asyncio.to_thread(check_channel_live, channel_id)
+            tasks.append((channel_id, channel_name, task))
+        results = await asyncio.gather(*(t[2] for t in tasks))
+
+
+        for (channel_id, channel_name, _), status in zip(tasks, results):
+
             if status is not None:
                 status["channel_id"] = channel_id
                 status["channel_name"] = status.get("channel_name") or channel_name
@@ -71,13 +81,15 @@ async def background_live_checker():
                     print(f"✅ LIVE: {status['channel_name']}")
                     print(f"   🔗 {status['watch_url']}")
                 #else statement that informms that the channel is offline
+                else:
+                    print(f"❌ OFFLINE: {channel_name}")
                 
             
             else: 
                 live_status_cache[channel_id] = None
                 print(f"❌ OFFLINE: {channel_name} ({channel_id})")  # 👈 now this prints when status is None
-                # delays the next channel check for 1 second 
-            await asyncio.sleep(1)  
+                
+            
         #after the entire channel_id list has been gone through
         #system doesn't do another check for 1 minute    
         await asyncio.sleep(60)
@@ -91,19 +103,26 @@ async def startup_event():
 # function that returns the newly returned live status cache values
 # so they can be accessed from a local host
 
-##  To use this function enter: "localhost:8000/live-status/all" into the browser after starting the app##
+##  To use this function enter: "localhost:8000/live-status/live" into the browser after starting the app##
+
+
 @app.get("/live-status/live")
 def get_currently_live_channels():
-    live_channels = []
+    return [
+        {
+            "channel_name": status.get("channel_name"),
+            "channel_id": status.get("channel_id"),
+            "watch_url": status.get("watch_url"),
+        }
+        for status in live_status_cache.values()
+        if status and status.get("is_live")
+    ]
 
-    for status in live_status_cache.values():
-        if status and status.get("is_live"):
-            live_channels.append({
-                "channel_name": status.get("channel_name"),
-                "channel_id": status.get("channel_id"),
-                "watch_url": status.get("watch_url"),
-            })
-            
 
-    return live_channels
-
+@app.get("/live-status/all")
+def get_all_channels_status():
+    return {
+        cid: status or {"is_live": False, "channel_name": name}
+        for cid, name in CHANNEL_IDS.items()
+        for status in [live_status_cache.get(cid)]
+    }
